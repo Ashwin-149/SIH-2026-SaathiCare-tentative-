@@ -1,5 +1,9 @@
-const API = localStorage.getItem('saathi_api') || 'http://127.0.0.1:8000';
-let token = localStorage.token || '';
+const API =
+    localStorage.getItem("saathi_api") ||
+    "https://saathicare-api.onrender.com";
+
+let token = localStorage.token;
+let selected = null;
 
 const $ = s => document.querySelector(s);
 async function api(path, options={}) {
