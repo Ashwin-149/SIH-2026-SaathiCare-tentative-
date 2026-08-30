@@ -1,0 +1,8 @@
+.venv/
+.venv-system/
+.deps/
+__pycache__/
+*.pyc
+data/app.db
+data/risk_model.joblib
+.env
