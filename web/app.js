@@ -1,8 +1,1175 @@
-const API=localStorage.getItem('saathi_api')||'http://127.0.0.1:8000';let token=localStorage.token, selected=null;
-const api=async(path,opt={})=>{let r=await fetch(API+path,{headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...opt});if(!r.ok)throw new Error((await r.json()).detail||'Request failed');return r.json()};
-const risk=x=>`<span class="badge ${x}">${x||'No check-in'}</span>`;const layout=c=>`<div class="shell"><nav class="side"><div class="brand"><span class="mark">✦</span> SaathiCare<small>Counselor workspace</small></div><a href="#/">⌂ <span>Overview</span></a><a href="#/users">♙ <span>People</span></a><a href="#/alerts">◉ <span>Alerts</span></a><a href="#/resources">♡ <span>Resources</span></a><div class="sidebottom"><span>Screening support · Demo</span><a href="#" onclick="localStorage.removeItem('token');location.reload()">↪ Sign out</a></div></nav><section class="page"><header class="topbar"><div><span class="eyebrow">CARE OPERATIONS</span></div><div class="availability"><i></i> System online</div></header>${c}</section></div>`;
-async function login(){document.querySelector('#app').innerHTML=`<div class="login"><div class="card"><h1>SaathiCare</h1><p class="muted">Authorized counselor portal</p><form id="login"><label>Email</label><input name="email" value="counselor@saathicare.demo" required><label>Password</label><input name="password" type="password" value="Demo@123" required><button>Sign in</button></form><div class="notice">Demo credentials are prefilled. Screening estimates are not diagnoses.</div></div></div>`;document.querySelector('#login').onsubmit=async e=>{e.preventDefault();try{let d=await api('/auth/login',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target))) });token=localStorage.token=d.token;route()}catch(x){alert(x.message)}}}
-async function overview(){let d=await api('/dashboard');document.querySelector('#app').innerHTML=layout(`<section class="heading"><div><h1>Good evening, Dr. Ananya</h1><p class="muted">Here’s the latest wellbeing screening activity.</p></div><a class="buttonlink" href="#/alerts">Review alerts →</a></section><div class="grid"><div class="card stat"><span>Registered people</span><div class="num">${d.total_users}</div><small>Across this demo workspace</small></div><div class="card stat"><span>Low risk</span><div class="num low">${d.risk_counts.Low}</div><small>Latest screening estimates</small></div><div class="card stat"><span>Moderate risk</span><div class="num moderate">${d.risk_counts.Moderate}</div><small>May benefit from follow-up</small></div><div class="card stat priority"><span>High risk</span><div class="num high">${d.risk_counts.High}</div><small>Prioritize human review</small></div></div><section class="sectionhead"><div><h2>Attention queue</h2><p class="muted">Open high-risk screening alerts awaiting review.</p></div></section>${d.recent_alerts.length?`<div class="tablecard"><table><tr><th>Person</th><th>Risk estimate</th><th>Model confidence</th><th>Received</th><th>Action</th></tr>${d.recent_alerts.map(a=>`<tr><td><b>${a.name}</b><br><small>${a.email}</small></td><td>${risk(a.risk)}</td><td>${a.probability.toFixed(0)}%</td><td>${new Date(a.created_at).toLocaleString()}</td><td><button class="ghost" onclick="profile(${a.id})">Review</button></td></tr>`).join('')}</table></div>`:'<div class="empty">✓ No high-risk screening alerts right now.</div>'}`)}
-async function users(){let d=await api('/users');document.querySelector('#app').innerHTML=layout(`<h1>People</h1><div class="toolbar"><span class="muted">Search and review screening history.</span><input id="search" placeholder="Search name or email"></div><div id="results"></div>`);let draw=x=>document.querySelector('#results').innerHTML=`<table><tr><th>Name</th><th>Email</th><th>Latest screening</th><th></th></tr>${x.map(u=>`<tr><td>${u.name}</td><td>${u.email}</td><td>${risk(u.risk)}</td><td><button onclick="profile(${u.id})">Open</button></td></tr>`).join('')}</table>`;draw(d);document.querySelector('#search').oninput=async e=>draw(await api('/users?q='+encodeURIComponent(e.target.value)))}
-async function profile(id){let d=await api('/users/'+id);let checks=[...d.checkins].reverse();document.querySelector('#app').innerHTML=layout(`<button onclick="users()">← People</button><h1 style="margin-top:18px">${d.user.name}</h1><p class="muted">${d.user.email} · ${d.user.phone||'No phone'}</p><div class="profile"><div><div class="card"><h2>Risk trend</h2><div class="chart">${checks.map(c=>`<div class="bar" title="${c.risk}: ${(c.probability*100).toFixed(0)}%" style="height:${Math.round(c.probability*100)}%;background:${c.risk==='High'?'#dc2626':c.risk==='Moderate'?'#d97706':'#059669'}"></div>`).join('')||'<span class="muted">No check-ins yet</span>'}</div><p class="muted">Each bar is a screening confidence estimate, not a diagnosis.</p></div><h2>Check-in history</h2><table><tr><th>Date</th><th>Risk</th><th>Journal note</th></tr>${d.checkins.map(c=>`<tr><td>${new Date(c.created_at).toLocaleDateString()}</td><td>${risk(c.risk)}</td><td>${c.journal||'—'}</td></tr>`).join('')}</table></div><aside><div class="card"><h2>Counselor notes</h2><div id="notes">${d.notes.map(n=>`<p><b>${n.author}</b><br>${n.body}<br><small class="muted">${new Date(n.created_at).toLocaleString()}</small></p>`).join('')||'<p class="muted">No notes yet.</p>'}</div><form id="note"><textarea name="body" placeholder="Add a private follow-up note" required></textarea><button>Save note</button></form></div></aside></div>`);document.querySelector('#note').onsubmit=async e=>{e.preventDefault();await api('/users/'+id+'/notes',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});profile(id)}}
-async function alerts(){let d=await api('/alerts');document.querySelector('#app').innerHTML=layout(`<section class="heading"><div><h1>Alert management</h1><p class="muted">Human review is required before any care decision.</p></div></section><div class="tabs"><button onclick="alerts()">All</button><button class="ghost" onclick="alertFilter('Open')">Open</button><button class="ghost" onclick="alertFilter('Resolved')">Resolved</button></div><div class="alertlist">${d.map(a=>`<article class="alert"><div><div class="avatar">${a.name[0]}</div></div><div class="alertbody"><b>${a.name}</b><p>${risk(a.risk)} · ${a.probability.toFixed(0)}% model confidence · ${new Date(a.created_at).toLocaleString()}</p><small>${a.email}</small></div><div>${a.status==='Open'?`<button onclick="resolve(${a.id})">Mark reviewed</button>`:'<span class="badge">Reviewed</span>'}<button class="ghost" onclick="profile(${a.user_id})">Open profile</button></div></article>`).join('')||'<div class="empty">No alerts match this filter.</div>'}</div>`)}async function alertFilter(status){let d=await api('/alerts?status='+status);document.querySelector('.alertlist').innerHTML=d.map(a=>`<article class="alert"><div class="avatar">${a.name[0]}</div><div class="alertbody"><b>${a.name}</b><p>${risk(a.risk)} · ${a.probability.toFixed(0)}% model confidence</p><small>${new Date(a.created_at).toLocaleString()}</small></div><div>${a.status==='Open'?`<button onclick="resolve(${a.id})">Mark reviewed</button>`:'<span class="badge">Reviewed</span>'}</div></article>`).join('')||'<div class="empty">No alerts match this filter.</div>'}async function resolve(id){await api('/alerts/'+id+'/resolve',{method:'PATCH'});alerts()}async function resources(){let d=await api('/resources');document.querySelector('#app').innerHTML=layout(`<section class="heading"><div><h1>Resource library</h1><p class="muted">Verified support pathways shown in the survivor app.</p></div></section><div class="resourcegrid">${d.map(x=>`<article class="card resource"><span>${x.category}</span><h2>${x.title}</h2><p class="muted">${x.description}</p><b>${x.contact||'Self-guided resource'}</b><button class="ghost" onclick="archiveResource(${x.id})">Archive</button></article>`).join('')}</div><div class="card"><h2>Add a resource</h2><form id="resourceform" class="inlineform"><input name="title" placeholder="Title" required><input name="category" placeholder="Category" required><input name="contact" placeholder="Phone or URL"><input name="description" placeholder="Short description"><button>Add resource</button></form></div>`);document.querySelector('#resourceform').onsubmit=async e=>{e.preventDefault();await api('/resources',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(e.target)))});resources()}}async function archiveResource(id){await api('/resources/'+id,{method:'DELETE'});resources()}function route(){if(!token)return login();let p=location.hash;return p==='#/users'?users():p==='#/alerts'?alerts():p==='#/resources'?resources():overview()}window.onhashchange=route;route();
+const API =
+    localStorage.getItem("saathi_api") ||
+    "https://saathicare-api.onrender.com";
+//const API =
+    //localStorage.getItem("saathi_api") || "http://127.0.0.1:8000";
+
+let token = localStorage.token;
+let selected = null;
+
+
+// ─────────────────────────────────────────────
+// API HELPER
+// ─────────────────────────────────────────────
+
+const api = async (path, opt = {}) => {
+    const response = await fetch(API + path, {
+        headers: {
+            "Content-Type": "application/json",
+            ...(token
+                ? {
+                      Authorization: "Bearer " + token,
+                  }
+                : {}),
+        },
+        ...opt,
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.detail || "Request failed");
+    }
+
+    return response.json();
+};
+
+
+// ─────────────────────────────────────────────
+// UI HELPERS
+// ─────────────────────────────────────────────
+
+const risk = (x) => `
+    <span class="badge ${x}">
+        ${x || "No check-in"}
+    </span>
+`;
+
+const layout = (content) => `
+    <div class="shell">
+
+        <nav class="side">
+
+            <div class="brand">
+                <span class="mark">✦</span>
+                SaathiCare
+                <small>Counselor workspace</small>
+            </div>
+
+            <a href="#/">
+                ⌂ <span>Overview</span>
+            </a>
+
+            <a href="#/users">
+                ♙ <span>People</span>
+            </a>
+
+            <a href="#/alerts">
+                ◉ <span>Alerts</span>
+            </a>
+
+            <a href="#/resources">
+                ♡ <span>Resources</span>
+            </a>
+
+            <div class="sidebottom">
+
+                <span>
+                    Screening support · Demo
+                </span>
+
+                <a
+                    href="#"
+                    onclick="
+                        localStorage.removeItem('token');
+                        location.reload();
+                    "
+                >
+                    ↪ Sign out
+                </a>
+
+            </div>
+
+        </nav>
+
+        <section class="page">
+
+            <header class="topbar">
+
+                <div>
+                    <span class="eyebrow">
+                        CARE OPERATIONS
+                    </span>
+                </div>
+
+                <div class="availability">
+                    <i></i>
+                    System online
+                </div>
+
+            </header>
+
+            ${content}
+
+        </section>
+
+    </div>
+`;
+
+
+// ─────────────────────────────────────────────
+// LOGIN
+// ─────────────────────────────────────────────
+
+async function login() {
+
+    document.querySelector("#app").innerHTML = `
+        <div class="login">
+
+            <div class="card">
+
+                <h1>
+                    SaathiCare
+                </h1>
+
+                <p class="muted">
+                    Authorized counselor portal
+                </p>
+
+                <form id="login">
+
+                    <label>
+                        Email
+                    </label>
+
+                    <input
+                        name="email"
+                        value="counselor@saathicare.demo"
+                        required
+                    >
+
+                    <label>
+                        Password
+                    </label>
+
+                    <input
+                        name="password"
+                        type="password"
+                        value="Demo@123"
+                        required
+                    >
+
+                    <button>
+                        Sign in
+                    </button>
+
+                </form>
+
+                <div class="notice">
+                    Demo credentials are prefilled.
+                    Screening estimates are not diagnoses.
+                </div>
+
+            </div>
+
+        </div>
+    `;
+
+
+    document.querySelector("#login").onsubmit = async (e) => {
+
+        e.preventDefault();
+
+        try {
+
+            const data = await api("/auth/login", {
+                method: "POST",
+
+                body: JSON.stringify(
+                    Object.fromEntries(
+                        new FormData(e.target)
+                    )
+                ),
+            });
+
+            token = localStorage.token = data.token;
+
+            route();
+
+        } catch (error) {
+
+            alert(error.message);
+
+        }
+    };
+}
+
+
+// ─────────────────────────────────────────────
+// OVERVIEW
+// ─────────────────────────────────────────────
+
+async function overview() {
+
+    const d = await api("/dashboard");
+
+    document.querySelector("#app").innerHTML =
+        layout(`
+
+        <section class="heading">
+
+            <div>
+
+                <h1>
+                    Good evening, Dr. Ananya
+                </h1>
+
+                <p class="muted">
+                    Here’s the latest wellbeing screening activity.
+                </p>
+
+            </div>
+
+            <a
+                class="buttonlink"
+                href="#/alerts"
+            >
+                Review alerts →
+            </a>
+
+        </section>
+
+
+        <div class="grid">
+
+            <div class="card stat">
+
+                <span>
+                    Registered people
+                </span>
+
+                <div class="num">
+                    ${d.total_users}
+                </div>
+
+                <small>
+                    Across this demo workspace
+                </small>
+
+            </div>
+
+
+            <div class="card stat">
+
+                <span>
+                    Low risk
+                </span>
+
+                <div class="num low">
+                    ${d.risk_counts.Low}
+                </div>
+
+                <small>
+                    Latest screening estimates
+                </small>
+
+            </div>
+
+
+            <div class="card stat">
+
+                <span>
+                    Moderate risk
+                </span>
+
+                <div class="num moderate">
+                    ${d.risk_counts.Moderate}
+                </div>
+
+                <small>
+                    May benefit from follow-up
+                </small>
+
+            </div>
+
+
+            <div class="card stat priority">
+
+                <span>
+                    High risk
+                </span>
+
+                <div class="num high">
+                    ${d.risk_counts.High}
+                </div>
+
+                <small>
+                    Prioritize human review
+                </small>
+
+            </div>
+
+        </div>
+
+
+        <section class="sectionhead">
+
+            <div>
+
+                <h2>
+                    Attention queue
+                </h2>
+
+                <p class="muted">
+                    Open high-risk screening alerts awaiting review.
+                </p>
+
+            </div>
+
+        </section>
+
+
+        ${
+            d.recent_alerts.length
+
+                ? `
+
+                <div class="tablecard">
+
+                    <table>
+
+                        <tr>
+                            <th>Person</th>
+                            <th>Risk estimate</th>
+                            <th>Model confidence</th>
+                            <th>Received</th>
+                            <th>Action</th>
+                        </tr>
+
+                        ${d.recent_alerts
+                            .map(
+                                (a) => `
+
+                            <tr>
+
+                                <td>
+                                    <b>${a.name}</b>
+                                    <br>
+                                    <small>${a.email}</small>
+                                </td>
+
+                                <td>
+                                    ${risk(a.risk)}
+                                </td>
+
+                                <td>
+                                    ${a.probability.toFixed(0)}%
+                                </td>
+
+                                <td>
+                                    ${new Date(
+                                        a.created_at
+                                    ).toLocaleString()}
+                                </td>
+
+                                <td>
+                                    <button
+                                        class="ghost"
+                                        onclick="profile(${a.id})"
+                                    >
+                                        Review
+                                    </button>
+                                </td>
+
+                            </tr>
+                        `
+                            )
+                            .join("")}
+
+                    </table>
+
+                </div>
+
+            `
+
+                : `
+
+                <div class="empty">
+                    ✓ No high-risk screening alerts right now.
+                </div>
+
+            `
+        }
+
+    `);
+}
+
+
+// ─────────────────────────────────────────────
+// PEOPLE
+// ─────────────────────────────────────────────
+
+async function users() {
+
+    const d = await api("/users");
+
+    document.querySelector("#app").innerHTML =
+        layout(`
+
+        <h1>
+            People
+        </h1>
+
+        <div class="toolbar">
+
+            <span class="muted">
+                Search and review screening history.
+            </span>
+
+            <input
+                id="search"
+                placeholder="Search name or email"
+            >
+
+        </div>
+
+        <div id="results"></div>
+
+    `);
+
+
+    const draw = (items) => {
+
+        document.querySelector("#results").innerHTML = `
+
+            <table>
+
+                <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Latest screening</th>
+                    <th></th>
+                </tr>
+
+                ${items
+                    .map(
+                        (u) => `
+
+                    <tr>
+
+                        <td>
+                            ${u.name}
+                        </td>
+
+                        <td>
+                            ${u.email}
+                        </td>
+
+                        <td>
+                            ${risk(u.risk)}
+                        </td>
+
+                        <td>
+
+                            <button
+                                onclick="profile(${u.id})"
+                            >
+                                Open
+                            </button>
+
+                        </td>
+
+                    </tr>
+
+                `
+                    )
+                    .join("")}
+
+            </table>
+
+        `;
+    };
+
+
+    draw(d);
+
+
+    document.querySelector("#search").oninput =
+        async (e) => {
+
+            const results = await api(
+                "/users?q=" +
+                    encodeURIComponent(
+                        e.target.value
+                    )
+            );
+
+            draw(results);
+        };
+}
+
+
+// ─────────────────────────────────────────────
+// PROFILE
+// ─────────────────────────────────────────────
+
+async function profile(id) {
+
+    const d = await api("/users/" + id);
+
+    const checks = [...d.checkins].reverse();
+
+    document.querySelector("#app").innerHTML =
+        layout(`
+
+        <button onclick="users()">
+            ← People
+        </button>
+
+
+        <h1 style="margin-top:18px">
+            ${d.user.name}
+        </h1>
+
+
+        <p class="muted">
+            ${d.user.email}
+            ·
+            ${d.user.phone || "No phone"}
+        </p>
+
+
+        <div class="profile">
+
+            <div>
+
+                <div class="card">
+
+                    <h2>
+                        Risk trend
+                    </h2>
+
+                    <div class="chart">
+
+                        ${
+                            checks
+                                .map(
+                                    (c) => `
+
+                                <div
+                                    class="bar"
+                                    title="${
+                                        c.risk
+                                    }: ${(
+                                        c.probability *
+                                        100
+                                    ).toFixed(0)}%"
+                                    style="
+                                        height:${Math.round(
+                                            c.probability *
+                                                100
+                                        )}%;
+                                        background:${
+                                            c.risk ===
+                                            "High"
+                                                ? "#dc2626"
+                                                : c.risk ===
+                                                  "Moderate"
+                                                ? "#d97706"
+                                                : "#059669"
+                                        }
+                                    "
+                                ></div>
+
+                            `
+                                )
+                                .join("") ||
+                            `
+                                <span class="muted">
+                                    No check-ins yet
+                                </span>
+                            `
+                        }
+
+                    </div>
+
+
+                    <p class="muted">
+                        Each bar is a screening confidence
+                        estimate, not a diagnosis.
+                    </p>
+
+                </div>
+
+
+                <h2>
+                    Check-in history
+                </h2>
+
+
+                <table>
+
+                    <tr>
+                        <th>Date</th>
+                        <th>Risk</th>
+                        <th>Journal note</th>
+                    </tr>
+
+                    ${d.checkins
+                        .map(
+                            (c) => `
+
+                        <tr>
+
+                            <td>
+                                ${new Date(
+                                    c.created_at
+                                ).toLocaleDateString()}
+                            </td>
+
+                            <td>
+                                ${risk(c.risk)}
+                            </td>
+
+                            <td>
+                                ${c.journal || "—"}
+                            </td>
+
+                        </tr>
+
+                    `
+                        )
+                        .join("")}
+
+                </table>
+
+            </div>
+
+
+            <aside>
+
+                <div class="card">
+
+                    <h2>
+                        Counselor notes
+                    </h2>
+
+
+                    <div id="notes">
+
+                        ${
+                            d.notes
+                                .map(
+                                    (n) => `
+
+                                <p>
+
+                                    <b>
+                                        ${n.author}
+                                    </b>
+
+                                    <br>
+
+                                    ${n.body}
+
+                                    <br>
+
+                                    <small class="muted">
+                                        ${new Date(
+                                            n.created_at
+                                        ).toLocaleString()}
+                                    </small>
+
+                                </p>
+
+                            `
+                                )
+                                .join("") ||
+                            `
+                                <p class="muted">
+                                    No notes yet.
+                                </p>
+                            `
+                        }
+
+                    </div>
+
+
+                    <form id="note">
+
+                        <textarea
+                            name="body"
+                            placeholder="Add a private follow-up note"
+                            required
+                        ></textarea>
+
+                        <button>
+                            Save note
+                        </button>
+
+                    </form>
+
+                </div>
+
+            </aside>
+
+        </div>
+
+    `);
+
+
+    document.querySelector("#note").onsubmit =
+        async (e) => {
+
+            e.preventDefault();
+
+            await api(
+                "/users/" + id + "/notes",
+                {
+                    method: "POST",
+
+                    body: JSON.stringify(
+                        Object.fromEntries(
+                            new FormData(e.target)
+                        )
+                    ),
+                }
+            );
+
+            profile(id);
+        };
+}
+
+
+// ─────────────────────────────────────────────
+// ALERTS
+// ─────────────────────────────────────────────
+
+async function alerts() {
+
+    const d = await api("/alerts");
+
+    document.querySelector("#app").innerHTML =
+        layout(`
+
+        <section class="heading">
+
+            <div>
+
+                <h1>
+                    Alert management
+                </h1>
+
+                <p class="muted">
+                    Human review is required before any
+                    care decision.
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <div class="tabs">
+
+            <button onclick="alerts()">
+                All
+            </button>
+
+            <button
+                class="ghost"
+                onclick="alertFilter('Open')"
+            >
+                Open
+            </button>
+
+            <button
+                class="ghost"
+                onclick="alertFilter('Resolved')"
+            >
+                Resolved
+            </button>
+
+        </div>
+
+
+        <div class="alertlist">
+
+            ${d
+                .map(
+                    (a) => `
+
+                <article class="alert">
+
+                    <div>
+
+                        <div class="avatar">
+                            ${a.name[0]}
+                        </div>
+
+                    </div>
+
+
+                    <div class="alertbody">
+
+                        <b>
+                            ${a.name}
+                        </b>
+
+                        <p>
+                            ${risk(a.risk)}
+                            ·
+                            ${a.probability.toFixed(0)}%
+                            model confidence
+                            ·
+                            ${new Date(
+                                a.created_at
+                            ).toLocaleString()}
+                        </p>
+
+                        <small>
+                            ${a.email}
+                        </small>
+
+                    </div>
+
+
+                    <div>
+
+                        ${
+                            a.status === "Open"
+
+                                ? `
+                                    <button
+                                        onclick="resolve(${a.id})"
+                                    >
+                                        Mark reviewed
+                                    </button>
+                                `
+
+                                : `
+                                    <span class="badge">
+                                        Reviewed
+                                    </span>
+                                `
+                        }
+
+
+                        <button
+                            class="ghost"
+                            onclick="profile(${a.user_id})"
+                        >
+                            Open profile
+                        </button>
+
+                    </div>
+
+                </article>
+
+            `
+                )
+                .join("") ||
+            `
+                <div class="empty">
+                    No alerts match this filter.
+                </div>
+            `}
+
+        </div>
+
+    `);
+}
+
+
+// ─────────────────────────────────────────────
+// ALERT FILTER
+// ─────────────────────────────────────────────
+
+async function alertFilter(status) {
+
+    const d = await api(
+        "/alerts?status=" + status
+    );
+
+
+    document.querySelector(
+        ".alertlist"
+    ).innerHTML =
+
+        d
+            .map(
+                (a) => `
+
+                <article class="alert">
+
+                    <div class="avatar">
+                        ${a.name[0]}
+                    </div>
+
+
+                    <div class="alertbody">
+
+                        <b>
+                            ${a.name}
+                        </b>
+
+                        <p>
+                            ${risk(a.risk)}
+                            ·
+                            ${a.probability.toFixed(0)}%
+                            model confidence
+                        </p>
+
+                        <small>
+                            ${new Date(
+                                a.created_at
+                            ).toLocaleString()}
+                        </small>
+
+                    </div>
+
+
+                    <div>
+
+                        ${
+                            a.status === "Open"
+
+                                ? `
+                                    <button
+                                        onclick="resolve(${a.id})"
+                                    >
+                                        Mark reviewed
+                                    </button>
+                                `
+
+                                : `
+                                    <span class="badge">
+                                        Reviewed
+                                    </span>
+                                `
+                        }
+
+                    </div>
+
+                </article>
+
+            `
+            )
+            .join("") ||
+
+        `
+            <div class="empty">
+                No alerts match this filter.
+            </div>
+        `;
+}
+
+
+// ─────────────────────────────────────────────
+// RESOLVE ALERT
+// ─────────────────────────────────────────────
+
+async function resolve(id) {
+
+    await api(
+        "/alerts/" + id + "/resolve",
+        {
+            method: "PATCH",
+        }
+    );
+
+    alerts();
+}
+
+
+// ─────────────────────────────────────────────
+// RESOURCES
+// ─────────────────────────────────────────────
+
+async function resources() {
+
+    const d = await api("/resources");
+
+    document.querySelector("#app").innerHTML =
+        layout(`
+
+        <section class="heading">
+
+            <div>
+
+                <h1>
+                    Resource library
+                </h1>
+
+                <p class="muted">
+                    Verified support pathways shown
+                    in the survivor app.
+                </p>
+
+            </div>
+
+        </section>
+
+
+        <div class="resourcegrid">
+
+            ${d
+                .map(
+                    (x) => `
+
+                <article class="card resource">
+
+                    <span>
+                        ${x.category}
+                    </span>
+
+                    <h2>
+                        ${x.title}
+                    </h2>
+
+                    <p class="muted">
+                        ${x.description}
+                    </p>
+
+                    <b>
+                        ${
+                            x.contact ||
+                            "Self-guided resource"
+                        }
+                    </b>
+
+                    <button
+                        class="ghost"
+                        onclick="archiveResource(${x.id})"
+                    >
+                        Archive
+                    </button>
+
+                </article>
+
+            `
+                )
+                .join("")}
+
+        </div>
+
+
+        <div class="card">
+
+            <h2>
+                Add a resource
+            </h2>
+
+            <form
+                id="resourceform"
+                class="inlineform"
+            >
+
+                <input
+                    name="title"
+                    placeholder="Title"
+                    required
+                >
+
+                <input
+                    name="category"
+                    placeholder="Category"
+                    required
+                >
+
+                <input
+                    name="contact"
+                    placeholder="Phone or URL"
+                >
+
+                <input
+                    name="description"
+                    placeholder="Short description"
+                >
+
+                <button>
+                    Add resource
+                </button>
+
+            </form>
+
+        </div>
+
+    `);
+
+
+    document.querySelector(
+        "#resourceform"
+    ).onsubmit = async (e) => {
+
+        e.preventDefault();
+
+        await api(
+            "/resources",
+            {
+                method: "POST",
+
+                body: JSON.stringify(
+                    Object.fromEntries(
+                        new FormData(e.target)
+                    )
+                ),
+            }
+        );
+
+        resources();
+    };
+}
+
+
+// ─────────────────────────────────────────────
+// ARCHIVE RESOURCE
+// ─────────────────────────────────────────────
+
+async function archiveResource(id) {
+
+    await api(
+        "/resources/" + id,
+        {
+            method: "DELETE",
+        }
+    );
+
+    resources();
+}
+
+
+// ─────────────────────────────────────────────
+// ROUTER
+// ─────────────────────────────────────────────
+
+function route() {
+
+    if (!token) {
+        return login();
+    }
+
+    const path = location.hash;
+
+    if (path === "#/users") {
+        return users();
+    }
+
+    if (path === "#/alerts") {
+        return alerts();
+    }
+
+    if (path === "#/resources") {
+        return resources();
+    }
+
+    return overview();
+}
+
+
+// ─────────────────────────────────────────────
+// START APPLICATION
+// ─────────────────────────────────────────────
+
+window.onhashchange = route;
+
+route();
